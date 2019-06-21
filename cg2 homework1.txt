@@ -1,0 +1,260 @@
+#include <vgl.h>
+#include <vec.h>
+#include <InitShader.h>
+
+#define PI 3.14159265359f
+typedef vec4 point4;
+typedef vec4 color4;
+
+const int NumPolygon = 10;
+const int NumTriangles = NumPolygon * 4;
+const int NumVertices = NumTriangles * 3;
+
+float dtheta =  PI * 2.0 / float(NumPolygon);
+float radius = 0.5; // 반지름
+
+int index = 0; // 그림그릴 면
+
+float theta1 = 0; // 회전
+float theta2 = 0;
+float theta3 = 0;
+
+bool rotate = true;
+
+//point4* points = new vec4[NumVertices]; // 1차원 배열 new 메모리 할당
+//color4* colors = new vec4[NumVertices]; // 1차원 배열 new 메모리 할당
+//point4* vertex_pos = new vec4[NumPolygon*2]; // 위아래 두개
+//color4* vertex_colors = new vec4[NumPolygon]; // 옆면만 있으면 됨
+
+point4 points[NumVertices];
+color4 colors[NumVertices];
+// 실제로 보낼 벡터
+point4 vertex_pos[NumPolygon*2];
+color4 vertex_colors[NumPolygon];
+
+void CreateVertices()
+{
+	printf("\n");
+	printf("dtheta: %.2f\nradius: %.2f\n", dtheta, radius);
+	// 실린더 윗부분과 아랫부분의 vertices 생성
+	for (int i=0; i<NumPolygon; i++)
+	{
+		vertex_pos[i] = point4(cos(dtheta*i)*radius, sin(dtheta*i)*radius , radius, 1.0);
+		vertex_pos[i+NumPolygon] = point4(cos(dtheta*i)*radius, sin(dtheta*i)*radius , -radius, 1.0);
+	}
+
+	// 실린더 옆면의 colors 생성
+	float sidecolor = 1.0 / (NumPolygon-1);
+	printf("sidecolor: %.2f\n", sidecolor);
+	for (int i=0; i<NumPolygon; i++)
+	{
+		vertex_colors[i] = color4(1-(sidecolor*i), 0, sidecolor*i, 1.0);
+		//vertex_colors[i+NumPolygon] = color4(1-(sidecolor*i), 0, sidecolor*i, 1.0);
+	}
+
+	printf("--------------------------------------------------\n");
+	for (int i=0; i<NumPolygon*2; i++)
+		printf("vertex_pos[%2d]: (%.2f, %.2f, %.2f)\n", i, vertex_pos[i].x, vertex_pos[i].y, vertex_pos[i].z);
+	printf("\n");
+	for (int i=0; i<NumPolygon*2; i++)
+		printf("vertex_colors[%2d]: (%.2f, %.2f, %.2f)\n", i, vertex_colors[i].x, vertex_colors[i].y, vertex_colors[i].z);
+}
+void quad(int a, int b, int c, int d)
+{
+	colors[index] = vertex_colors[a];
+	points[index] = vertex_pos[a];
+	index++;
+
+	colors[index] = vertex_colors[a];
+	points[index] = vertex_pos[b];
+	index++;
+
+	colors[index] = vertex_colors[a];
+	points[index] = vertex_pos[c];
+	index++;
+
+	colors[index] = vertex_colors[a];
+	points[index] = vertex_pos[a];
+	index++;
+
+	colors[index] = vertex_colors[a];
+	points[index] = vertex_pos[c];
+	index++;
+
+	colors[index] = vertex_colors[a];
+	points[index] = vertex_pos[d];
+	index++;
+}
+void colorside()
+{
+	for (int i=0; i<NumPolygon; i++)
+	{
+		if (i != (NumPolygon-1))
+		quad(i, i+1, i+NumPolygon+1, i+NumPolygon);
+		else
+			quad(i, 0, NumPolygon, NumPolygon*2-1);
+	}
+}
+void triangle(int a, int b, float radius)
+{	
+	colors[index] = color4(1,1,1,1.0);
+	points[index] = vertex_pos[a];
+	index++;
+
+	colors[index] = color4(1,1,1,1.0);
+	points[index] = vertex_pos[b];
+	index++;
+
+	colors[index] = color4(1,1,1,1.0);
+	points[index] = point4(0,0,radius,1.0);
+	index++;
+}
+void colorface()
+{
+	for (int i=0; i<NumPolygon; i++)
+	{
+		if (i != (NumPolygon-1))
+		{
+			triangle(i, i+1, radius);
+			triangle(i+NumPolygon, i+1+NumPolygon, -radius);
+		}
+		else
+		{
+			triangle(i, 0, radius);
+			triangle(NumPolygon*2-1, NumPolygon, -radius);
+		}
+	}
+}
+
+GLuint prog;
+
+void myInit()
+{
+	colorside();
+	colorface();
+
+	printf("--------------------------------------------------\n");
+	for (int i=0; i<NumVertices; i++)
+		printf("points[%d]: (%.2f, %.2f, %.2f)\n", i, points[i].x, points[i].y, points[i].z);
+	printf("\n");
+	for (int i=0; i<NumVertices; i++)
+		printf("colors[%d]: (%.2f, %.2f, %.2f)\n", i, colors[i].x, colors[i].y, colors[i].z);
+
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
+	GLuint buf;
+	glGenBuffers(1, &buf);
+	glBindBuffer(GL_ARRAY_BUFFER, buf);
+
+	// GL_STATIC_DRAW : 이 데이터는 바뀌지 않는다
+	glBufferData(GL_ARRAY_BUFFER, sizeof(points) + sizeof(colors), 0, GL_DYNAMIC_DRAW);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(points), points);
+	glBufferSubData(GL_ARRAY_BUFFER, sizeof(points), sizeof(colors), colors);
+
+	prog = InitShader("vshader.glsl", "fshader.glsl");
+	glUseProgram(prog);
+
+	GLuint vPosition = glGetAttribLocation(prog, "vPosition");
+	glEnableVertexAttribArray(vPosition);
+	glVertexAttribPointer(vPosition, 4, GL_FLOAT, GL_FALSE, 0, BUFFER_OFFSET(0));
+
+	GLuint vColor = glGetAttribLocation(prog, "vColor");
+	glEnableVertexAttribArray(vColor);
+	glVertexAttribPointer(vColor, 4, GL_FLOAT, GL_FALSE, 0, BUFFER_OFFSET(sizeof(points)));
+}
+
+void myDisplay()
+{
+	GLuint uTheta1 = glGetUniformLocation(prog, "uTheta1");
+	GLuint uTheta2 = glGetUniformLocation(prog, "uTheta2");
+	GLuint uTheta3 = glGetUniformLocation(prog, "uTheta3");
+
+	glUniform1f(uTheta1, theta1);
+	glUniform1f(uTheta2, theta2);
+	glUniform1f(uTheta3, theta3);
+
+	glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+	glEnable(GL_DEPTH_TEST);
+	glDrawArrays(GL_TRIANGLES, 0, NumVertices);
+	
+}
+
+void myIdle()
+{
+	if (rotate == true)
+	{
+		theta1 += 0.01;
+		theta2 += 0.02;
+		theta3 += 0.03;
+	}
+
+	Sleep(16);
+	glutPostRedisplay();
+}
+
+void myKey(unsigned char key, int x, int y)
+{
+	//switch (key)
+	//{
+	//case VK_SPACE: // 스페이스바
+	//	if (rotate == 1)
+	//		rotate = 0;
+	//	else
+	//		rotate = 1;
+	//	break;
+	//case '1':
+	//	printf("1");
+	//	break;
+	//case '2':
+	//	printf("2");
+	//	break;
+	//case 'q':	exit(0); break; //  종료
+	//case 'Q':	exit(0); break;
+	//default:
+	//	break;
+	//}
+
+	if (key == VK_SPACE)
+	{
+		if (rotate == true)
+			rotate = false;
+		else if (rotate == false)
+			rotate = true;
+	}
+	else if (key == 'q' || key == 'Q') // Q키를 누르면 프로그램 종료
+		 exit(0);
+	else return;
+
+	myInit();
+	myDisplay();
+}
+
+int main(int argc, char ** argv)
+{
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_RGBA|GLUT_DEPTH);
+	glutInitWindowSize(500,500);
+	glutCreateWindow("Homework 1");
+
+	glewExperimental = true;
+	glewInit();
+
+	printf("OpenGL %s\nGLSL %s\n", glGetString(GL_VERSION), glGetString(GL_SHADING_LANGUAGE_VERSION));
+	printf("--------------------------------------------------\n");
+	printf("Polygon: %2d, Num.of Triangles: %2d, Num.of Vertices: %3d\n", NumPolygon, NumTriangles, NumVertices);
+
+	CreateVertices();
+
+	myInit();
+	glutDisplayFunc(myDisplay);
+	glutIdleFunc(myIdle);
+	glutKeyboardFunc(myKey);
+
+	glutMainLoop();
+
+	//delete[] points; // 메모리 해제
+	//delete[] colors; // 메모리 해제
+	return 0;
+}
